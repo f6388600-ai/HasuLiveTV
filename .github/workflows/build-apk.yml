@@ -27,7 +27,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: "12266719"
           accept-android-sdk-licenses: false
 
       - name: Accept Android SDK licenses
@@ -54,23 +53,9 @@ jobs:
       - name: Build Admin APK
         run: ./gradlew assembleAdminDebug --stacktrace
 
-      - name: Upload Mobile APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Hasu-Live-TV-Mobile
-          path: app/build/outputs/apk/**/*.apk
-          if-no-files-found: error
-
-      - name: Upload TV APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Hasu-Live-TV-TV
-          path: app/build/outputs/apk/**/*.apk
-          if-no-files-found: error
-
-      - name: Upload Admin APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Hasu-Live-TV-Admin
+          name: Hasu-Live-TV-APKs
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
