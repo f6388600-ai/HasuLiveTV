@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "634970287742",
+    "project_id": "hasu-live-tv",
+    "storage_bucket": "hasu-live-tv.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:634970287742:android:d29331b4d0e58d5390f22f",
+        "android_client_info": {
+          "package_name": "com.hasu.livetv.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBFBn20YQN8wxNKYe2H0HO_mypJrEymMFA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
