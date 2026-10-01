@@ -2,8 +2,6 @@
 
 package com.hasu.livetv
 
-import com.hasu.livetv.auth.LoginScreen
-import com.hasu.livetv.auth.SignupScreen
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -34,6 +32,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -41,14 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.google.firebase.auth.FirebaseAuth
-import com.hasu.livetv.auth.AuthViewModel
 import com.hasu.livetv.data.LiveTvRepository
-import com.hasu.livetv.data.UserRepository
 import com.hasu.livetv.model.Category
 import com.hasu.livetv.model.Channel
 import kotlinx.coroutines.delay
@@ -75,172 +72,44 @@ class MainActivity : ComponentActivity() {
    ========================================================= */
 
 @Composable
-private fun App(
-    repo: LiveTvRepository
-) {
-    var splash by remember {
-        mutableStateOf(true)
-    }
-
+private fun App(repo: LiveTvRepository) {
+    var splash by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
         delay(900)
         splash = false
     }
-
     if (splash) {
         Splash()
         return
     }
-
-    /*
-     * Admin gets its own authenticated flow.
-     */
     if (BuildConfig.EDITION == "admin") {
-        AdminApp(repo)
-        return
+        AdminDashboard(repo)
+    } else {
+        MainUserApp(repo)
     }
-
-    /*
-     * Mobile + TV use normal user authentication.
-     */
-    UserApp(repo)
 }
 
-/* =========================================================
-   USER APP AUTH GATE
-   ========================================================= */
-
 @Composable
-private fun UserApp(
-    repo: LiveTvRepository,
-    authViewModel: AuthViewModel = viewModel()
-) {
-    val authState by authViewModel.uiState
-        .collectAsStateWithLifecycle()
-
-    var authPage by remember {
-        mutableStateOf("login")
-    }
-
-    if (!authState.isLoggedIn) {
-
-        AnimatedContent(
-            targetState = authPage,
-            transitionSpec = {
-                fadeIn() togetherWith fadeOut()
-            },
-            label = "auth"
-        ) { page ->
-
-            when (page) {
-
-                "signup" -> {
-                    SignupScreen(
-                        viewModel = authViewModel,
-                        onLogin = {
-                            authPage = "login"
-                        },
-                        onSuccess = {
-                            authPage = "login"
-                        }
-                    )
-                }
-
-                else -> {
-                    LoginScreen(
-                        viewModel = authViewModel,
-                        onSignup = {
-                            authPage = "signup"
-                        },
-                        onSuccess = {
-                            authPage = "login"
-                        }
-                    )
-                }
-            }
-        }
-
-        return
-    }
-
-    /*
-     * Existing application starts here after Firebase login.
-     */
-    MainUserApp(
-        repo = repo,
-        authViewModel = authViewModel
-    )
-}
-
-/* =========================================================
-   EXISTING USER APP
-   ========================================================= */
-
-@Composable
-private fun MainUserApp(
-    repo: LiveTvRepository,
-    authViewModel: AuthViewModel
-) {
-    var page by remember {
-        mutableStateOf<Page>(Page.Home)
-    }
-
-    var selected by remember {
-        mutableStateOf<Channel?>(null)
-    }
-
+private fun MainUserApp(repo: LiveTvRepository) {
+    var page by remember { mutableStateOf<Page>(Page.Home) }
+    var selected by remember { mutableStateOf<Channel?>(null) }
     AnimatedContent(
         targetState = page,
-        transitionSpec = {
-            fadeIn() togetherWith fadeOut()
-        },
+        transitionSpec = { fadeIn() togetherWith fadeOut() },
         label = "navigation"
     ) { currentPage ->
-
         when (currentPage) {
-
-            Page.Home -> {
-
-                Home(
-                    repo = repo,
-                    tv = BuildConfig.EDITION == "tv",
-
-                    play = {
-                        selected = it
-                        page = Page.Player
-                    },
-
-                    about = {
-                        page = Page.About
-                    },
-
-                    logout = {
-                        authViewModel.logout()
-                    }
-                )
-            }
-
-            Page.About -> {
-
-                About(
-                    back = {
-                        page = Page.Home
-                    },
-                    logout = {
-                        authViewModel.logout()
-                    }
-                )
-            }
-
-            Page.Player -> {
-
-                selected?.let {
-
-                    Player(it) {
-
-                        selected = null
-                        page = Page.Home
-                    }
+            Page.Home -> Home(
+                repo = repo,
+                tv = BuildConfig.EDITION == "tv",
+                play = { selected = it; page = Page.Player },
+                about = { page = Page.About }
+            )
+            Page.About -> About { page = Page.Home }
+            Page.Player -> selected?.let { channel ->
+                Player(channel) {
+                    selected = null
+                    page = Page.Home
                 }
             }
         }
@@ -333,8 +202,7 @@ private fun Home(
     repo: LiveTvRepository,
     tv: Boolean,
     play: (Channel) -> Unit,
-    about: () -> Unit,
-    logout: () -> Unit
+    about: () -> Unit
 ) {
 
     val channels by repo.channels
@@ -387,14 +255,8 @@ private fun Home(
             play = play,
             fav = favorites,
             toggle = { id ->
-                favorites =
-                    if (id in favorites) {
-                        favorites - id
-                    } else {
-                        favorites + id
-                    }
-            },
-            logout = logout
+                favorites = if (id in favorites) favorites - id else favorites + id
+            }
         )
 
     } else {
@@ -439,8 +301,7 @@ private fun TvHome(
     setSearch: (String) -> Unit,
     play: (Channel) -> Unit,
     fav: Set<String>,
-    toggle: (String) -> Unit,
-    logout: () -> Unit
+    toggle: (String) -> Unit
 ) {
 
     LazyColumn(
@@ -463,11 +324,7 @@ private fun TvHome(
 
         item {
 
-            TvTopBar(
-                search,
-                setSearch,
-                logout
-            )
+            TvTopBar(search, setSearch)
         }
 
         item {
@@ -546,8 +403,7 @@ private fun TvHome(
 @Composable
 private fun TvTopBar(
     search: String,
-    setSearch: (String) -> Unit,
-    logout: () -> Unit
+    setSearch: (String) -> Unit
 ) {
 
     Row(
@@ -586,18 +442,7 @@ private fun TvTopBar(
             modifier = Modifier.width(330.dp)
         )
 
-        Spacer(
-            Modifier.width(12.dp)
-        )
-
-        IconButton(
-            onClick = logout
-        ) {
-            Icon(
-                Icons.Default.Logout,
-                "Logout"
-            )
-        }
+        Spacer(Modifier.width(12.dp))
     }
 }
 
@@ -887,23 +732,7 @@ private fun MobileHome(
 
             else -> {
 
-                About(
-                    back = about,
-                    logout = {
-                        FirebaseAuth
-                            .getInstance()
-                            .signOut()
-
-                        /*
-                         * App root observes Firebase state
-                         * through AuthViewModel.
-                         *
-                         * We trigger activity recreation so
-                         * auth state is shown immediately.
-                         */
-                        about()
-                    }
-                )
+                About(back = about)
             }
         }
     }
@@ -1004,103 +833,109 @@ private fun Hero(
     play: (Channel) -> Unit,
     tv: Boolean
 ) {
-
     Box(
         Modifier
             .fillMaxWidth()
-            .height(
-                if (tv) 300.dp
-                else 220.dp
+            .height(if (tv) 320.dp else 230.dp)
+            .padding(if (tv) 0.dp else 16.dp)
+            .clip(RoundedCornerShape(if (tv) 0.dp else 26.dp))
+            .background(Color(0xFF151722))
+    ) {
+        if (channel?.bannerUrl?.isNotBlank() == true) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(channel.bannerUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = channel.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.42f
             )
-            .padding(
-                if (tv) 0.dp
-                else 16.dp
-            )
-            .clip(
-                RoundedCornerShape(
-                    if (tv) 0.dp
-                    else 26.dp
-                )
-            )
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme
-                            .primary
-                            .copy(.65f),
-                        Color(0xFF12131B),
-                        MaterialTheme.colorScheme
-                            .secondary
-                            .copy(.18f)
+        }
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color.Black.copy(alpha = .82f),
+                            Color.Black.copy(alpha = .35f),
+                            Color.Transparent
+                        )
                     )
                 )
-            )
-    ) {
+        )
 
         if (channel != null) {
-
-            Column(
+            Row(
                 Modifier
-                    .align(
-                        Alignment.CenterStart
-                    )
-                    .padding(
-                        if (tv) 48.dp
-                        else 24.dp
-                    ),
-                verticalArrangement =
-                    Arrangement.spacedBy(8.dp)
+                    .fillMaxSize()
+                    .padding(if (tv) 48.dp else 24.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
-                Text(
-                    "FEATURED • LIVE",
-                    color =
-                        MaterialTheme.colorScheme
-                            .secondary,
-                    fontWeight =
-                        FontWeight.Bold
-                )
-
-                Text(
-                    channel.name,
-                    style =
-                        if (tv)
-                            MaterialTheme.typography
-                                .displaySmall
-                        else
-                            MaterialTheme.typography
-                                .headlineMedium,
-                    fontWeight =
-                        FontWeight.ExtraBold
-                )
-
-                Text(
-                    channel.description.ifBlank {
-                        "Watch live TV with Hasu Live TV."
-                    },
-                    color =
-                        Color.White.copy(.72f),
-                    maxLines = 2
-                )
-
-                Button(
-                    onClick = {
-                        play(channel)
-                    }
+                ChannelLogo(channel, if (tv) 86.dp else 68.dp)
+                Spacer(Modifier.width(18.dp))
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        null
+                    Text(
+                        "FEATURED • LIVE",
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
                     )
-
-                    Spacer(
-                        Modifier.width(6.dp)
+                    Text(
+                        channel.name,
+                        style = if (tv) MaterialTheme.typography.displaySmall else MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
                     )
-
-                    Text("Watch Live")
+                    Text(
+                        channel.description.ifBlank { "Watch live TV with Hasu Live TV." },
+                        color = Color.White.copy(.72f),
+                        maxLines = 2
+                    )
+                    Button(onClick = { play(channel) }) {
+                        Icon(Icons.Default.PlayArrow, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Watch Live")
+                    }
                 }
             }
+        } else {
+            Empty("No featured channel", "Add a channel from the Admin app.")
+        }
+    }
+}
+
+@Composable
+private fun ChannelLogo(channel: Channel, size: Dp) {
+    Box(
+        Modifier
+            .size(size)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        if (channel.logoUrl.isNotBlank()) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(channel.logoUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = channel.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Text(
+                channel.name.take(1).uppercase(),
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = (size.value * .36f).sp
+            )
         }
     }
 }
@@ -1244,112 +1079,57 @@ private fun ChannelCard(
     isFav: Boolean,
     toggle: () -> Unit
 ) {
-
     Card(
         Modifier
             .width(width)
-            .height(
-                if (tv) 155.dp
-                else 142.dp
-            )
-            .clickable {
-                play(c)
-            },
-        shape =
-            RoundedCornerShape(18.dp)
+            .clickable { play(c) },
+        shape = RoundedCornerShape(18.dp)
     ) {
-
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(14.dp)
-        ) {
-
-            Row(
-                verticalAlignment =
-                    Alignment.CenterVertically
+        Column {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(if (tv) 118.dp else 96.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
-
+                if (c.bannerUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current).data(c.bannerUrl).crossfade(true).build(),
+                        contentDescription = c.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        alpha = .82f
+                    )
+                }
                 Box(
                     Modifier
-                        .size(
-                            if (tv) 54.dp
-                            else 44.dp
-                        )
-                        .background(
-                            MaterialTheme.colorScheme
-                                .surfaceVariant,
-                            RoundedCornerShape(12.dp)
-                        ),
-                    Alignment.Center
-                ) {
-
-                    Text(
-                        c.channelNumber.toString(),
-                        fontWeight =
-                            FontWeight.Bold
-                    )
-                }
-
-                Spacer(
-                    Modifier.width(10.dp)
-                )
-
-                Column(
-                    Modifier.weight(1f)
-                ) {
-
-                    Text(
-                        c.name,
-                        fontWeight =
-                            FontWeight.Bold,
-                        maxLines = 1
-                    )
-
-                    Text(
-                        c.category,
-                        color =
-                            MaterialTheme.colorScheme
-                                .onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-
-            Spacer(
-                Modifier.weight(1f)
-            )
-
-            Row(
-                verticalAlignment =
-                    Alignment.CenterVertically
-            ) {
-
-                AssistChip(
-                    onClick = toggle,
-                    label = {
-                        Text(
-                            if (isFav)
-                                "♥"
-                            else
-                                "♡"
-                        )
-                    }
-                )
-
-                Spacer(
-                    Modifier.weight(1f)
-                )
-
+                        .align(Alignment.BottomStart)
+                        .padding(10.dp)
+                ) { ChannelLogo(c, if (tv) 54.dp else 46.dp) }
                 Text(
                     "LIVE",
-                    color =
-                        MaterialTheme.colorScheme
-                            .secondary,
-                    fontSize = 11.sp,
-                    fontWeight =
-                        FontWeight.Bold
+                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
                 )
+            }
+            Column(Modifier.padding(12.dp)) {
+                Text(c.name, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(
+                    "#${c.channelNumber} • ${c.category}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    maxLines = 1
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AssistChip(
+                        onClick = toggle,
+                        label = { Text(if (isFav) "♥" else "♡") }
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(c.language, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
@@ -1366,75 +1146,23 @@ private fun ChannelListItem(
     isFav: Boolean,
     toggle: () -> Unit
 ) {
-
     Card(
-        Modifier
-            .fillMaxWidth()
-            .clickable {
-                play(c)
-            },
-        shape =
-            RoundedCornerShape(18.dp)
+        Modifier.fillMaxWidth().clickable { play(c) },
+        shape = RoundedCornerShape(18.dp)
     ) {
-
-        Row(
-            Modifier.padding(14.dp),
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            Box(
-                Modifier
-                    .size(50.dp)
-                    .background(
-                        MaterialTheme.colorScheme
-                            .surfaceVariant,
-                        RoundedCornerShape(12.dp)
-                    ),
-                Alignment.Center
-            ) {
-
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            ChannelLogo(c, 54.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(c.name, fontWeight = FontWeight.Bold)
                 Text(
-                    c.channelNumber.toString(),
-                    fontWeight =
-                        FontWeight.Bold
-                )
-            }
-
-            Spacer(
-                Modifier.width(12.dp)
-            )
-
-            Column(
-                Modifier.weight(1f)
-            ) {
-
-                Text(
-                    c.name,
-                    fontWeight =
-                        FontWeight.Bold
-                )
-
-                Text(
-                    "${c.category} • ${c.country} • ${c.language}",
+                    "#${c.channelNumber} • ${c.category} • ${c.country} • ${c.language}",
                     fontSize = 12.sp,
-                    color =
-                        MaterialTheme.colorScheme
-                            .onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
-            IconButton(
-                onClick = toggle
-            ) {
-
-                Icon(
-                    if (isFav)
-                        Icons.Default.Favorite
-                    else
-                        Icons.Default.FavoriteBorder,
-                    "Favorite"
-                )
+            IconButton(onClick = toggle) {
+                Icon(if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite")
             }
         }
     }
@@ -1479,8 +1207,7 @@ private fun ChipRow(
 
 @Composable
 private fun About(
-    back: () -> Unit,
-    logout: () -> Unit
+    back: () -> Unit
 ) {
 
     Column(
@@ -1510,19 +1237,7 @@ private fun About(
                 )
             }
 
-            Spacer(
-                Modifier.weight(1f)
-            )
-
-            IconButton(
-                onClick = logout
-            ) {
-
-                Icon(
-                    Icons.Default.Logout,
-                    "Logout"
-                )
-            }
+            Spacer(Modifier.weight(1f))
         }
 
         Spacer(
@@ -1579,7 +1294,7 @@ private fun About(
                 )
 
                 Text(
-                    "Version 1.0.0 • Firebase Connected",
+                    "Version 1.1.0 • Local Catalog",
                     color =
                         MaterialTheme.colorScheme
                             .onSurfaceVariant
@@ -1715,322 +1430,12 @@ private fun Player(
 }
 
 /* =========================================================
-   ADMIN APP
-   ========================================================= */
-
-@Composable
-private fun AdminApp(
-    repo: LiveTvRepository,
-    authViewModel: AuthViewModel = viewModel()
-) {
-
-    val state by authViewModel.uiState
-        .collectAsStateWithLifecycle()
-
-    if (!state.isLoggedIn) {
-
-        AdminLogin(
-            viewModel = authViewModel
-        )
-
-        return
-    }
-
-    AdminRoleGate(
-        repo = repo,
-        authViewModel = authViewModel
-    )
-}
-
-/* =========================================================
-   ADMIN ROLE CHECK
-   ========================================================= */
-
-@Composable
-private fun AdminRoleGate(
-    repo: LiveTvRepository,
-    authViewModel: AuthViewModel
-) {
-
-    val context =
-        LocalContext.current
-
-    var checking by remember {
-        mutableStateOf(true)
-    }
-
-    var isAdmin by remember {
-        mutableStateOf(false)
-    }
-
-    var error by remember {
-        mutableStateOf<String?>(null)
-    }
-
-    LaunchedEffect(Unit) {
-
-        try {
-
-            val role =
-                UserRepository()
-                    .getUserRole()
-
-            isAdmin =
-                role.equals(
-                    "admin",
-                    ignoreCase = true
-                )
-
-        } catch (e: Exception) {
-
-            error =
-                e.message
-                    ?: "Unable to verify admin role."
-        }
-
-        checking = false
-    }
-
-    if (checking) {
-
-        Box(
-            Modifier.fillMaxSize(),
-            Alignment.Center
-        ) {
-
-            CircularProgressIndicator()
-        }
-
-        return
-    }
-
-    if (!isAdmin) {
-
-        Box(
-            Modifier.fillMaxSize(),
-            Alignment.Center
-        ) {
-
-            Card(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
-            ) {
-
-                Column(
-                    Modifier.padding(24.dp),
-                    horizontalAlignment =
-                        Alignment.CenterHorizontally
-                ) {
-
-                    Icon(
-                        Icons.Default.Lock,
-                        null,
-                        Modifier.size(48.dp),
-                        tint =
-                            MaterialTheme.colorScheme
-                                .error
-                    )
-
-                    Spacer(
-                        Modifier.height(14.dp)
-                    )
-
-                    Text(
-                        "Admin Access Required",
-                        style =
-                            MaterialTheme.typography
-                                .headlineSmall,
-                        fontWeight =
-                            FontWeight.Bold
-                    )
-
-                    Spacer(
-                        Modifier.height(8.dp)
-                    )
-
-                    Text(
-                        error
-                            ?: "This account does not have admin permission."
-                    )
-
-                    Spacer(
-                        Modifier.height(18.dp)
-                    )
-
-                    Button(
-                        onClick = {
-                            authViewModel.logout()
-                        }
-                    ) {
-
-                        Text("Logout")
-                    }
-                }
-            }
-        }
-
-        return
-    }
-
-    AdminDashboard(
-        repo = repo,
-        logout = {
-            authViewModel.logout()
-        }
-    )
-}
-
-/* =========================================================
-   ADMIN LOGIN
-   ========================================================= */
-
-@Composable
-private fun AdminLogin(
-    viewModel: AuthViewModel
-) {
-
-    val state by viewModel.uiState
-        .collectAsStateWithLifecycle()
-
-    var email by remember {
-        mutableStateOf("")
-    }
-
-    var password by remember {
-        mutableStateOf("")
-    }
-
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        Color(0xFF08090D),
-                        Color(0xFF17122A)
-                    )
-                )
-            ),
-        Alignment.Center
-    ) {
-
-        Card(
-            Modifier
-                .widthIn(
-                    max = 430.dp
-                )
-                .padding(24.dp)
-        ) {
-
-            Column(
-                Modifier.padding(26.dp),
-                verticalArrangement =
-                    Arrangement.spacedBy(14.dp)
-            ) {
-
-                Logo(58.dp)
-
-                Text(
-                    "Admin Console",
-                    style =
-                        MaterialTheme.typography
-                            .headlineSmall,
-                    fontWeight =
-                        FontWeight.Bold
-                )
-
-                Text(
-                    "Sign in with Firebase Authentication",
-                    color =
-                        MaterialTheme.colorScheme
-                            .onSurfaceVariant
-                )
-
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = {
-                        email = it
-                    },
-                    label = {
-                        Text("Email")
-                    },
-                    singleLine = true,
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = {
-                        password = it
-                    },
-                    label = {
-                        Text("Password")
-                    },
-                    singleLine = true,
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                state.error?.let {
-
-                    Text(
-                        it,
-                        color =
-                            MaterialTheme.colorScheme
-                                .error,
-                        fontSize = 12.sp
-                    )
-                }
-
-                Button(
-                    onClick = {
-
-                        viewModel.login(
-                            email,
-                            password
-                        )
-                    },
-                    enabled =
-                        !state.isLoading,
-                    modifier =
-                        Modifier.fillMaxWidth()
-                ) {
-
-                    if (state.isLoading) {
-
-                        CircularProgressIndicator(
-                            Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-
-                    } else {
-
-                        Text("Sign In")
-                    }
-                }
-
-                Text(
-                    "Only users with role = admin can access this console.",
-                    fontSize = 12.sp,
-                    color =
-                        MaterialTheme.colorScheme
-                            .onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-/* =========================================================
-   ADMIN DASHBOARD
+   ADMIN CONSOLE — NO LOGIN
    ========================================================= */
 
 @Composable
 private fun AdminDashboard(
-    repo: LiveTvRepository,
-    logout: () -> Unit
+    repo: LiveTvRepository
 ) {
 
     val scope =
@@ -2070,22 +1475,9 @@ private fun AdminDashboard(
                             Modifier.width(10.dp)
                         )
 
-                        Text("Hasu Admin")
+                        Text("Hasu Live TV • Admin")
                     }
                 },
-
-                actions = {
-
-                    IconButton(
-                        onClick = logout
-                    ) {
-
-                        Icon(
-                            Icons.Default.Logout,
-                            "Logout"
-                        )
-                    }
-                }
             )
         },
 
@@ -2383,173 +1775,93 @@ private fun ChannelEditor(
     save: (Channel) -> Unit,
     cancel: () -> Unit
 ) {
-
-    var name by remember(
-        existing?.id
-    ) {
-        mutableStateOf(
-            existing?.name ?: ""
-        )
-    }
-
-    var url by remember(
-        existing?.id
-    ) {
-
-        mutableStateOf(
-            existing?.streamUrl
-                ?: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-        )
-    }
-
-    var category by remember(
-        existing?.id
-    ) {
-
-        mutableStateOf(
-            existing?.category ?: "News"
-        )
-    }
-
-    var number by remember(
-        existing?.id
-    ) {
-
-        mutableStateOf(
-            (
-                    existing?.channelNumber
-                        ?: 1
-                    ).toString()
-        )
-    }
+    var name by remember(existing?.id) { mutableStateOf(existing?.name ?: "") }
+    var url by remember(existing?.id) { mutableStateOf(existing?.streamUrl ?: "") }
+    var category by remember(existing?.id) { mutableStateOf(existing?.category ?: "News") }
+    var country by remember(existing?.id) { mutableStateOf(existing?.country ?: "Bangladesh") }
+    var language by remember(existing?.id) { mutableStateOf(existing?.language ?: "Bangla") }
+    var number by remember(existing?.id) { mutableStateOf((existing?.channelNumber ?: 1).toString()) }
+    var logoUrl by remember(existing?.id) { mutableStateOf(existing?.logoUrl ?: "") }
+    var bannerUrl by remember(existing?.id) { mutableStateOf(existing?.bannerUrl ?: "") }
+    var description by remember(existing?.id) { mutableStateOf(existing?.description ?: "") }
+    var enabled by remember(existing?.id) { mutableStateOf(existing?.enabled ?: true) }
+    var featured by remember(existing?.id) { mutableStateOf(existing?.featured ?: false) }
+    var popular by remember(existing?.id) { mutableStateOf(existing?.popular ?: false) }
+    var sortOrder by remember(existing?.id) { mutableStateOf((existing?.sortOrder ?: 0).toString()) }
 
     AlertDialog(
-
         onDismissRequest = cancel,
-
-        title = {
-
-            Text(
-                if (existing == null)
-                    "Add Channel"
-                else
-                    "Edit Channel"
-            )
-        },
-
+        title = { Text(if (existing == null) "Add Channel" else "Edit Channel") },
         text = {
-
             Column(
-                verticalArrangement =
-                    Arrangement.spacedBy(8.dp)
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-
+                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Channel name") }, singleLine = true)
+                OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("Stream URL") }, singleLine = true)
+                OutlinedTextField(logoUrl, { logoUrl = it }, Modifier.fillMaxWidth(), label = { Text("Logo image URL") }, singleLine = true)
+                OutlinedTextField(bannerUrl, { bannerUrl = it }, Modifier.fillMaxWidth(), label = { Text("Banner image URL") }, singleLine = true)
+                OutlinedTextField(category, { category = it }, Modifier.fillMaxWidth(), label = { Text("Category") }, singleLine = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(country, { country = it }, Modifier.weight(1f), label = { Text("Country") }, singleLine = true)
+                    OutlinedTextField(language, { language = it }, Modifier.weight(1f), label = { Text("Language") }, singleLine = true)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(number, { number = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Channel #") }, singleLine = true)
+                    OutlinedTextField(sortOrder, { sortOrder = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Sort order") }, singleLine = true)
+                }
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                    },
-                    label = {
-                        Text("Name")
-                    },
-                    singleLine = true
+                    description,
+                    { description = it },
+                    Modifier.fillMaxWidth().heightIn(min = 80.dp),
+                    label = { Text("Description") }
                 )
-
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = {
-                        url = it
-                    },
-                    label = {
-                        Text("Stream URL")
-                    },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = {
-                        category = it
-                    },
-                    label = {
-                        Text("Category")
-                    },
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = number,
-                    onValueChange = {
-                        number =
-                            it.filter(
-                                Char::isDigit
-                            )
-                    },
-                    label = {
-                        Text("Channel Number")
-                    },
-                    singleLine = true
-                )
+                SettingToggle("Enabled", enabled) { enabled = it }
+                SettingToggle("Featured on Home", featured) { featured = it }
+                SettingToggle("Popular", popular) { popular = it }
             }
         },
-
         confirmButton = {
-
             Button(
                 onClick = {
-
-                    if (
-                        name.isNotBlank() &&
-                        url.isNotBlank()
-                    ) {
-
-                        val channel =
-
-                            if (existing != null) {
-
-                                existing.copy(
-                                    name = name,
-                                    streamUrl = url,
-                                    category = category,
-                                    channelNumber =
-                                        number.toIntOrNull()
-                                            ?: existing.channelNumber
-                                )
-
-                            } else {
-
-                                Channel(
-                                    UUID.randomUUID()
-                                        .toString(),
-                                    name,
-                                    url,
-                                    category,
-                                    "Global",
-                                    "English",
-                                    number.toIntOrNull()
-                                        ?: 1
-                                )
-                            }
-
-                        save(channel)
-                    }
+                    if (name.isBlank() || url.isBlank()) return@Button
+                    val channel = (existing ?: Channel(
+                        id = UUID.randomUUID().toString(),
+                        name = name,
+                        streamUrl = url,
+                        category = category,
+                        country = country,
+                        language = language,
+                        channelNumber = number.toIntOrNull() ?: 1
+                    )).copy(
+                        name = name.trim(),
+                        streamUrl = url.trim(),
+                        category = category.trim().ifBlank { "General" },
+                        country = country.trim().ifBlank { "Global" },
+                        language = language.trim().ifBlank { "English" },
+                        channelNumber = number.toIntOrNull() ?: 1,
+                        enabled = enabled,
+                        featured = featured,
+                        popular = popular,
+                        description = description.trim(),
+                        logoUrl = logoUrl.trim(),
+                        bannerUrl = bannerUrl.trim(),
+                        sortOrder = sortOrder.toIntOrNull() ?: 0
+                    )
+                    save(channel)
                 }
-            ) {
-
-                Text("Save")
-            }
+            ) { Text("Save Channel") }
         },
-
-        dismissButton = {
-
-            TextButton(
-                onClick = cancel
-            ) {
-
-                Text("Cancel")
-            }
-        }
+        dismissButton = { TextButton(onClick = cancel) { Text("Cancel") } }
     )
+}
+
+@Composable
+private fun SettingToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+    }
 }
 
 /* =========================================================
