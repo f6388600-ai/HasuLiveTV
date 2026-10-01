@@ -70,7 +70,6 @@ android {
         }
 
         debug {
-            applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
     }
@@ -85,7 +84,6 @@ kotlin {
 }
 
 dependencies {
-
     val composeBom =
         platform("androidx.compose:compose-bom:2026.09.00")
 
