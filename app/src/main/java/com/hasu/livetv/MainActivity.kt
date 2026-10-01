@@ -41,11 +41,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.google.firebase.auth.FirebaseAuth
 import com.hasu.livetv.data.LiveTvRepository
 import com.hasu.livetv.model.Category
 import com.hasu.livetv.model.Channel
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
@@ -365,7 +366,7 @@ private fun About(back: () -> Unit) {
         Card { Column(Modifier.padding(20.dp)) {
             Text("About", fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp))
             Text("A clean, fast Live TV application designed for Android mobile and TV. Firebase integration is intentionally prepared as a repository layer and can be connected later.")
-            Spacer(Modifier.height(16.dp)); Text("Version 1.0.0 • Demo Mode", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(16.dp)); Text("Version 1.0.0 • Firebase Ready", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
     }
 }
@@ -418,16 +419,35 @@ private fun AdminApp(repo: LiveTvRepository) {
 private fun AdminLogin(done: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
     Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF08090D), Color(0xFF17122A)))), Alignment.Center) {
         Card(Modifier.widthIn(max = 430.dp).padding(24.dp)) {
             Column(Modifier.padding(26.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Logo(58.dp)
                 Text("Admin Console", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Firebase Authentication placeholder", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true)
-                OutlinedTextField(value = pass, onValueChange = { pass = it }, label = { Text("Password") }, singleLine = true)
-                Button(onClick = { if (email.isNotBlank() && pass.isNotBlank()) done() }, modifier = Modifier.fillMaxWidth()) { Text("Continue in Demo Mode") }
-                Text("Production login is enforced through Firebase Auth + Firestore rules after integration.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Sign in with Firebase Authentication", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(value = email, onValueChange = { email = it; error = null }, label = { Text("Email") }, singleLine = true)
+                OutlinedTextField(value = pass, onValueChange = { pass = it; error = null }, label = { Text("Password") }, singleLine = true)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                Button(
+                    onClick = {
+                        if (email.isBlank() || pass.isBlank()) {
+                            error = "Email and password are required."
+                        } else {
+                            loading = true
+                            FirebaseAuth.getInstance().signInWithEmailAndPassword(email.trim(), pass)
+                                .addOnSuccessListener { loading = false; done() }
+                                .addOnFailureListener { e -> loading = false; error = e.message ?: "Login failed." }
+                        }
+                    },
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Sign In")
+                }
+                Text("Admin access should also be restricted by Firestore rules/role in production.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -443,7 +463,7 @@ private fun AdminDashboard(repo: LiveTvRepository, logout: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically) { Logo(34.dp); Spacer(Modifier.width(10.dp)); Text("Hasu Admin") } }, actions = { IconButton(onClick = logout) { Icon(Icons.Default.Logout, "Logout") } })
+            TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically) { Logo(34.dp); Spacer(Modifier.width(10.dp)); Text("Hasu Admin") } }, actions = { IconButton(onClick = { FirebaseAuth.getInstance().signOut(); logout() }) { Icon(Icons.Default.Logout, "Logout") } })
         },
         floatingActionButton = { FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Default.Add, "Add") } }
     ) { pad ->
@@ -467,7 +487,7 @@ private fun AdminDashboard(repo: LiveTvRepository, logout: () -> Unit) {
         AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete channel?") },
-            text = { Text("Remove ${c.name} from the demo catalog?") },
+            text = { Text("Remove ${c.name} from the catalog?") },
             confirmButton = { Button(onClick = { scope.launch { repo.deleteChannel(c.id); deleting = null } }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } }
         )
