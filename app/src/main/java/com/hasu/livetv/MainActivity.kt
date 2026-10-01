@@ -2,6 +2,8 @@
 
 package com.hasu.livetv
 
+import com.hasu.livetv.auth.LoginScreen
+import com.hasu.livetv.auth.SignupScreen
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
