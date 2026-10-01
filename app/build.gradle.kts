@@ -163,23 +163,14 @@ dependencies {
         "androidx.media3:media3-ui:1.11.1"
     )
 
-    // Firebase
+    // Remote channel logos/banners
     implementation(
-        platform(
-            "com.google.firebase:firebase-bom:34.6.0"
-        )
+        "io.coil-kt:coil-compose:2.7.0"
     )
 
-    implementation(
-        "com.google.firebase:firebase-auth"
-    )
+    // Firebase Firestore — shared live channel catalog
+    implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 
-    implementation(
-        "com.google.firebase:firebase-firestore"
-    )
-
-    // Firebase + Kotlin Coroutines await()
-    implementation(
-        "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2"
-    )
 }
